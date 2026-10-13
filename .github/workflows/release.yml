@@ -1,0 +1,50 @@
+# Merging a PR into main with a release:major|minor|patch label cuts a release.
+# No label = no release (docs, CI, chores).
+name: Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Next version
+        id: v
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          case " $LABELS " in
+            *" release:major "*) bump=major ;;
+            *" release:minor "*) bump=minor ;;
+            *" release:patch "*) bump=patch ;;
+            *) echo "no release label, skipping"; exit 0 ;;
+          esac
+          last=$(git tag -l 'v*' --sort=-v:refname | head -1); last=${last:-v0.0.0}
+          IFS=. read -r M m p <<< "${last#v}"
+          case $bump in
+            major) M=$((M+1)); m=0; p=0 ;;
+            minor) m=$((m+1)); p=0 ;;
+            patch) p=$((p+1)) ;;
+          esac
+          echo "version=$M.$m.$p" >> "$GITHUB_OUTPUT"
+      - name: Build
+        if: steps.v.outputs.version
+        run: |
+          VERSION=${{ steps.v.outputs.version }} ./build.sh
+          ditto -c -k --keepParent TodayBar.app TodayBar-${{ steps.v.outputs.version }}.zip
+      - name: Publish
+        if: steps.v.outputs.version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${{ steps.v.outputs.version }}
+          gh release create "v$v" "TodayBar-$v.zip" --target "${{ github.event.pull_request.merge_commit_sha }}" \
+            --title "TodayBar $v" --generate-notes
