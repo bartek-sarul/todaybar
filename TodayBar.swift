@@ -2,6 +2,7 @@ import SwiftUI
 import EventKit
 import ServiceManagement
 import AVFoundation
+import CoreAudio
 
 struct Item: Identifiable {
     let id: String
@@ -100,6 +101,16 @@ final class Store: ObservableObject {
         return NSWorkspace.shared.runningApplications.contains { $0.localizedName == "CptHost" }
     }
 
+    // ponytail: heuristic, true while any app records from the default mic (Zoom/Teams/Meet in browser, but also dictation)
+    var inCall: Bool {
+        var dev = AudioObjectID(0), size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var a = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &a, 0, nil, &size, &dev) == 0 else { return false }
+        var on: UInt32 = 0; size = UInt32(MemoryLayout<UInt32>.size)
+        a.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
+        return AudioObjectGetPropertyData(dev, &a, 0, nil, &size, &on) == 0 && on != 0
+    }
+
     var quiet: Bool {
         let d = UserDefaults.standard
         if d.bool(forKey: "quietFocus") && focusOn { return true }
@@ -139,7 +150,7 @@ final class Store: ObservableObject {
         ticks += 1
         let now = Date.now
         let lead = UserDefaults.standard.double(forKey: "alertLead")
-        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
+        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") && !(UserDefaults.standard.bool(forKey: "skipInCall") && inCall) ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
         let due = cands.first {
             $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300)
                 && !dismissed.contains($0.id) && (snoozed[$0.id] ?? .distantPast) <= now
@@ -187,7 +198,7 @@ final class Store: ObservableObject {
     }
 
     init() {
-        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "pastMode": 0, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
+        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "pastMode": 0, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "skipInCall": true, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyTheme(); await self?.load() }
         }
@@ -362,6 +373,7 @@ struct SettingsView: View {
     @AppStorage("quietShare") private var quietShare = true
     @AppStorage("linkOnly") private var linkOnly = true
     @AppStorage("hideOnShare") private var hideOnShare = false
+    @AppStorage("skipInCall") private var skipInCall = true
     @AppStorage("quietHours") private var quietHours = false
     @AppStorage("quietFrom") private var quietFrom = 22
     @AppStorage("quietTo") private var quietTo = 8
@@ -396,6 +408,7 @@ struct SettingsView: View {
                 Section("Alert") {
                     Toggle("Full-screen alert before a meeting", isOn: $alert)
                     Toggle("Only for events with a meeting link", isOn: $linkOnly)
+                    Toggle("Skip when already in a call (microphone in use)", isOn: $skipInCall)
                     Stepper("Trigger \(Int(lead)) seconds before", value: $lead, in: 0...3600, step: 5)
                     Toggle("Play alarm sound", isOn: $alarm)
                     Slider(value: $alarmVol, in: 0...100, step: 5) { Text("Alarm volume \(Int(alarmVol))%") }
