@@ -284,6 +284,7 @@ final class Flag: ObservableObject { @Published var on = false } // @State macro
 
 struct Row: View {
     let i: Item
+    var next = false
     @ObservedObject var store: Store
     @StateObject private var h = Flag()
     @AppStorage("indicators") private var indicators = true
@@ -292,8 +293,8 @@ struct Row: View {
         HStack(spacing: 8) {
             if indicators { RoundedRectangle(cornerRadius: 2).fill(i.color).frame(width: 4, height: 32) }
             VStack(alignment: .leading, spacing: 1) {
-                Text(i.title).lineLimit(2).strikethrough(i.done).foregroundStyle(i.done ? .secondary : .primary)
-                Text(i.time).font(.caption).foregroundStyle(.secondary)
+                Text(i.title).fontWeight(next ? .bold : .regular).lineLimit(2).strikethrough(i.done).foregroundStyle(i.done ? .secondary : .primary)
+                Text(i.time).font(.caption).fontWeight(next ? .semibold : .regular).foregroundStyle(next ? Color.accentColor : .secondary)
             }
             Spacer(minLength: 0)
             if let id = i.aid, store.snoozed[id] != nil {
@@ -304,7 +305,7 @@ struct Row: View {
         }
         .opacity(i.past && pastMode == 0 ? 0.4 : 1)
         .padding(.horizontal, 6).padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 6).fill(h.on ? Color.primary.opacity(0.1) : .clear))
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(h.on ? 0.1 : next ? 0.06 : 0)))
         .contentShape(Rectangle())
         .onHover { h.on = $0 }
         .onTapGesture { if let u = i.open { NSWorkspace.shared.open(u) } }
@@ -433,6 +434,11 @@ struct Panel: View {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "MMMM d, EEEE"
         return f.string(from: .now)
     }
+    var nextIDs: Set<String> {
+        let up = store.items.filter { !$0.isReminder && $0.time != "All day" && $0.sort > .now }
+        guard let t = up.map(\.sort).min() else { return [] }
+        return Set(up.filter { $0.sort == t }.map(\.id))
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -447,7 +453,7 @@ struct Panel: View {
             } else if store.items.isEmpty {
                 Text("Nothing today").foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 2) { ForEach(store.items) { i in Row(i: i, store: store) } }
+                VStack(alignment: .leading, spacing: 2) { ForEach(store.items) { i in Row(i: i, next: nextIDs.contains(i.id), store: store) } }
             }
             Divider()
             Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
