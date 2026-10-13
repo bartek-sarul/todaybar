@@ -24,3 +24,6 @@ Grant Calendar and Reminders access on first launch.
 ## Notes
 - Focus detection reads `~/Library/DoNotDisturb/DB/Assertions.json`; grant TodayBar **Full Disk Access** or it is ignored.
 - Screen share detection is a heuristic: mirrored display or Zoom's `CptHost` process. Browser-based sharing is not detected.
+
+## License
+Proprietary, all rights reserved. See [LICENSE](LICENSE).
