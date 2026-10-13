@@ -13,6 +13,7 @@ struct Item: Identifiable {
     let open: URL?
     let join: URL?
     var done = false
+    var past = false
     var rid: String? = nil
     var aid: String? = nil
 }
@@ -186,7 +187,7 @@ final class Store: ObservableObject {
     }
 
     init() {
-        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "past": true, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
+        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "pastMode": 0, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyTheme(); await self?.load() }
         }
@@ -246,12 +247,12 @@ final class Store: ObservableObject {
                 let p = ek.predicateForEvents(withStart: start, end: end, calendars: cals)
                 for e in ek.events(matching: p) {
                     if e.isAllDay && !d.bool(forKey: "allDay") { continue }
-                    if !e.isAllDay && e.endDate < .now && !d.bool(forKey: "past") { continue }
+                    if !e.isAllDay && e.endDate < .now && d.integer(forKey: "pastMode") == 2 { continue }
                     let t = e.isAllDay ? "All day" : d.bool(forKey: "endTime") ? "\(fmt.string(from: e.startDate)) – \(fmt.string(from: e.endDate))" : fmt.string(from: e.startDate)
                     let eid = e.eventIdentifier ?? UUID().uuidString
                     out.append(Item(id: "e\(eid)\(e.startDate.timeIntervalSince1970)", title: e.title ?? "", time: t,
                                     color: Color(cgColor: e.calendar.cgColor), sort: e.isAllDay ? start : e.startDate, isReminder: false,
-                                    open: URL(string: "ical://ekevent/\(eid)?method=show&options=more"), join: meetingLink(e), aid: aid(e)))
+                                    open: URL(string: "ical://ekevent/\(eid)?method=show&options=more"), join: meetingLink(e), past: !e.isAllDay && e.endDate < .now, aid: aid(e)))
                 }
             }
         }
@@ -286,6 +287,7 @@ struct Row: View {
     @ObservedObject var store: Store
     @StateObject private var h = Flag()
     @AppStorage("indicators") private var indicators = true
+    @AppStorage("pastMode") private var pastMode = 0
     var body: some View {
         HStack(spacing: 8) {
             if indicators { RoundedRectangle(cornerRadius: 2).fill(i.color).frame(width: 4, height: 32) }
@@ -300,6 +302,7 @@ struct Row: View {
             if let j = i.join { Button("Join") { NSWorkspace.shared.open(j); if let id = i.aid { store.dismissId(id) } }.buttonStyle(.borderedProminent).controlSize(.small) }
             if i.isReminder { Button { store.toggle(i) } label: { Image(systemName: i.done ? "checkmark.circle.fill" : "circle").foregroundStyle(i.color) }.buttonStyle(.plain) }
         }
+        .opacity(i.past && pastMode == 0 ? 0.4 : 1)
         .padding(.horizontal, 6).padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: 6).fill(h.on ? Color.primary.opacity(0.1) : .clear))
         .contentShape(Rectangle())
@@ -348,7 +351,7 @@ struct SettingsView: View {
     @AppStorage("indicators") private var indicators = true
     @AppStorage("allDay") private var allDay = true
     @AppStorage("endTime") private var endTime = true
-    @AppStorage("past") private var past = true
+    @AppStorage("pastMode") private var pastMode = 0
     @AppStorage("completed") private var completed = true
     @AppStorage("alert") private var alert = true
     @AppStorage("alarm") private var alarm = true
@@ -372,7 +375,7 @@ struct SettingsView: View {
                     Toggle("Calendar indicators", isOn: $indicators)
                     Toggle("All-day events", isOn: $allDay)
                     Toggle("End time for events", isOn: $endTime)
-                    Toggle("Today’s past events", isOn: $past)
+                    Picker("Today’s past events", selection: $pastMode) { Text("Grayed out").tag(0); Text("Normal").tag(1); Text("Hidden").tag(2) }
                     Toggle("Completed reminders", isOn: $completed)
                 }
             }.formStyle(.grouped).tabItem { Label("Appearance", systemImage: "paintbrush") }
