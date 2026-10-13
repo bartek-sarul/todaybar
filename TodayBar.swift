@@ -236,7 +236,7 @@ final class Store: ObservableObject {
             if !ac.isEmpty {
                 let p = ek.predicateForEvents(withStart: .now, end: end, calendars: ac)
                 targets = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
-                    .map { Alert(id: aid($0), title: $0.title ?? "", start: $0.startDate, join: meetingLink($0)) }
+                    .map { Alert(id: aid($0), title: $0.title ?? "", start: $0.startDate, join: meetingLink($0)) }.filter { $0.join != nil }
             }
         }
 
@@ -389,7 +389,7 @@ struct SettingsView: View {
             }.formStyle(.grouped).tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             Form {
                 Section("Alert") {
-                    Toggle("Full-screen alert before a meeting", isOn: $alert)
+                    Toggle("Full-screen alert before a meeting (only with a meeting link)", isOn: $alert)
                     Stepper("Trigger \(Int(lead)) seconds before", value: $lead, in: 0...3600, step: 5)
                     Toggle("Play alarm sound", isOn: $alarm)
                     Slider(value: $alarmVol, in: 0...100, step: 5) { Text("Alarm volume \(Int(alarmVol))%") }
