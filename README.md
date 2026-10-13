@@ -31,8 +31,8 @@ Grant Calendar and Reminders access on first launch.
 
 ## Contributing
 Work on a `feature/*` or `fix/*` branch and open a PR to `main`. CI must pass.
-Releases are cut from PRs: add one label before merging — `release:major`, `release:minor` or `release:patch`.
-No label = no release. The version is the previous tag bumped accordingly; a zip is attached to the GitHub release.
+Every merged PR cuts a release (patch bump by default). Add `release:minor` or `release:major` before merging to bump more, or `release:skip` for no release (docs, CI, chores).
+The version is the previous tag bumped accordingly; a zip is attached to the GitHub release.
 
 ## License
 Proprietary, all rights reserved. See [LICENSE](LICENSE).

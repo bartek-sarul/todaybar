@@ -1,5 +1,5 @@
-# Merging a PR into main with a release:major|minor|patch label cuts a release.
-# No label = no release (docs, CI, chores).
+# Every merged PR into main cuts a release. Default bump: patch.
+# Label release:major|minor to bump more; release:skip to cut no release.
 name: Release
 on:
   pull_request:
@@ -24,8 +24,8 @@ jobs:
           case " $LABELS " in
             *" release:major "*) bump=major ;;
             *" release:minor "*) bump=minor ;;
-            *" release:patch "*) bump=patch ;;
-            *) echo "no release label, skipping"; exit 0 ;;
+            *" release:skip "*) echo "release:skip, skipping"; exit 0 ;;
+            *) bump=patch ;;
           esac
           last=$(git tag -l 'v*' --sort=-v:refname | head -1); last=${last:-v0.0.0}
           IFS=. read -r M m p <<< "${last#v}"
