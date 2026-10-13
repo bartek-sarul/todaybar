@@ -6,7 +6,7 @@ macOS menu bar app showing today's calendar events and reminders, with a full-sc
 - Today's events and reminders in a menu bar panel; click a row to open it in Calendar / Reminders
 - Next event in the menu bar title (calendars selectable)
 - One-click **Join** for Zoom, Meet, Teams and Webex links
-- Full-screen alert (only for events with a Zoom/Meet/Teams/Webex link) with alarm sound, snooze (30s), cancel, mute
+- Full-screen alert (by default only for events with a Zoom/Meet/Teams/Webex link; configurable) with alarm sound, snooze (30s), cancel, mute
 - Complete reminders from the panel
 - Silence the alarm during Focus / Do Not Disturb, screen sharing or mirroring, and quiet hours; optionally hide the alert while sharing
 - Per-calendar visibility, light/dark theme, launch at login

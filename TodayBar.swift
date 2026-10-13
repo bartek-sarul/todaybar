@@ -138,7 +138,7 @@ final class Store: ObservableObject {
         ticks += 1
         let now = Date.now
         let lead = UserDefaults.standard.double(forKey: "alertLead")
-        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") ? targets : [])
+        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
         let due = cands.first {
             $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300)
                 && !dismissed.contains($0.id) && (snoozed[$0.id] ?? .distantPast) <= now
@@ -186,7 +186,7 @@ final class Store: ObservableObject {
     }
 
     init() {
-        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "past": true, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "quietFrom": 22, "quietTo": 8])
+        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "past": true, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyTheme(); await self?.load() }
         }
@@ -236,7 +236,7 @@ final class Store: ObservableObject {
             if !ac.isEmpty {
                 let p = ek.predicateForEvents(withStart: .now, end: end, calendars: ac)
                 targets = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
-                    .map { Alert(id: aid($0), title: $0.title ?? "", start: $0.startDate, join: meetingLink($0)) }.filter { $0.join != nil }
+                    .map { Alert(id: aid($0), title: $0.title ?? "", start: $0.startDate, join: meetingLink($0)) }
             }
         }
 
@@ -356,6 +356,7 @@ struct SettingsView: View {
     @AppStorage("alarmVol") private var alarmVol = 30.0
     @AppStorage("quietFocus") private var quietFocus = true
     @AppStorage("quietShare") private var quietShare = true
+    @AppStorage("linkOnly") private var linkOnly = true
     @AppStorage("hideOnShare") private var hideOnShare = false
     @AppStorage("quietHours") private var quietHours = false
     @AppStorage("quietFrom") private var quietFrom = 22
@@ -389,7 +390,8 @@ struct SettingsView: View {
             }.formStyle(.grouped).tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             Form {
                 Section("Alert") {
-                    Toggle("Full-screen alert before a meeting (only with a meeting link)", isOn: $alert)
+                    Toggle("Full-screen alert before a meeting", isOn: $alert)
+                    Toggle("Only for events with a meeting link", isOn: $linkOnly)
                     Stepper("Trigger \(Int(lead)) seconds before", value: $lead, in: 0...3600, step: 5)
                     Toggle("Play alarm sound", isOn: $alarm)
                     Slider(value: $alarmVol, in: 0...100, step: 5) { Text("Alarm volume \(Int(alarmVol))%") }
