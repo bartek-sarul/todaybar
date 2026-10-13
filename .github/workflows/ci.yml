@@ -1,0 +1,17 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./build.sh
+      - run: lipo -archs TodayBar.app/Contents/MacOS/TodayBar
+      - run: ditto -c -k --keepParent TodayBar.app TodayBar.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TodayBar-${{ github.sha }}
+          path: TodayBar.zip
