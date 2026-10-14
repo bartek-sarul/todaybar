@@ -3,7 +3,8 @@
 set -e
 cd "$(dirname "$0")"
 A=TodayBar.app/Contents
-mkdir -p $A/MacOS
+mkdir -p $A/MacOS $A/Resources
+cp AppIcon.icns $A/Resources/
 V=${VERSION:-0.0.0-dev}
 # universal binary (arm64 + x86_64), macOS 14+
 for a in arm64 x86_64; do
@@ -15,6 +16,7 @@ cat > $A/Info.plist <<P
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>TodayBar</string>
 <key>CFBundleIdentifier</key><string>local.todaybar</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleName</key><string>TodayBar</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$V</string>
