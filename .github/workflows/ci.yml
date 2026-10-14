@@ -8,6 +8,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - run: swiftc Logic.swift tests/main.swift -o "$RUNNER_TEMP/check" && "$RUNNER_TEMP/check"
       - run: ./build.sh
       - run: lipo -archs TodayBar.app/Contents/MacOS/TodayBar
       - run: ditto -c -k --keepParent TodayBar.app TodayBar.zip

@@ -7,7 +7,7 @@ macOS menu bar app showing today's calendar events and reminders, with a full-sc
 - Next upcoming event(s) highlighted in the panel; past events grayed out, normal or hidden (setting)
 - Next event in the menu bar title (calendars selectable)
 - One-click **Join** for Zoom, Meet, Teams and Webex links
-- Full-screen alert (by default only for events with a Zoom/Meet/Teams/Webex link; configurable) with alarm sound, snooze (30s), cancel, mute; skipped when you're already in a call (microphone in use, setting)
+- Full-screen alert (by default only for events with a Zoom/Meet/Teams/Webex link; configurable) with alarm sound, snooze (30s / 1m), alarm sound limited to N minutes, cancel, mute; skipped when you're already in a call (microphone in use, setting)
 - Complete reminders from the panel
 - Silence the alarm during Focus / Do Not Disturb, screen sharing or mirroring, and quiet hours; optionally hide the alert while sharing
 - Per-calendar visibility, light/dark theme, launch at login
@@ -15,6 +15,11 @@ macOS menu bar app showing today's calendar events and reminders, with a full-sc
 ## Install
 Download `TodayBar-x.y.z.zip` from [Releases](https://github.com/bartek-sarul/todaybar/releases), unzip, move `TodayBar.app` to `/Applications`.
 The app is ad-hoc signed (not notarized): on first launch right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/TodayBar.app`.
+
+## Test
+```sh
+swiftc Logic.swift tests/main.swift -o /tmp/check && /tmp/check
+```
 
 ## Build
 Requires macOS 14+ and the Xcode command line tools.
