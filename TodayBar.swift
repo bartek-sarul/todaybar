@@ -325,11 +325,13 @@ struct Row: View {
     @AppStorage("pastMode") private var pastMode = 0
     var body: some View {
         HStack(spacing: 8) {
-            if indicators { RoundedRectangle(cornerRadius: 2).fill(i.color).frame(width: 4, height: 32) }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(i.title).fontWeight(next ? .bold : .regular).lineLimit(2).strikethrough(i.done).foregroundStyle(i.done ? .secondary : .primary)
-                Text(i.time).font(.caption).fontWeight(next ? .semibold : .regular).foregroundStyle(next ? Color.accentColor : .secondary)
-            }
+            Group {
+                if indicators { RoundedRectangle(cornerRadius: 2).fill(i.color).frame(width: 4, height: 32) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(i.title).fontWeight(next ? .bold : .regular).lineLimit(2).strikethrough(i.done).foregroundStyle(i.done ? .secondary : .primary)
+                    Text(i.time).font(.caption).fontWeight(next ? .semibold : .regular).foregroundStyle(next ? Color.accentColor : .secondary)
+                }
+            }.opacity(i.past && pastMode == 0 ? 0.4 : 1) // dim text only, Join stays fully active
             Spacer(minLength: 0)
             if let id = i.aid, store.snoozed[id] != nil {
                 Button("Zzz") { store.dismissId(id) }.buttonStyle(.bordered).tint(.orange).controlSize(.small).help("Cancel snoozed alert")
@@ -337,7 +339,6 @@ struct Row: View {
             if let j = i.join { Button("Join") { NSWorkspace.shared.open(j); if let id = i.aid { store.dismissId(id) } }.buttonStyle(.borderedProminent).controlSize(.small) }
             if i.isReminder { Button { store.toggle(i) } label: { Image(systemName: i.done ? "checkmark.circle.fill" : "circle").foregroundStyle(i.color) }.buttonStyle(.plain) }
         }
-        .opacity(i.past && pastMode == 0 ? 0.4 : 1)
         .padding(.horizontal, 6).padding(.vertical, 3)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(h.on ? 0.1 : next ? 0.06 : 0)))
         .contentShape(Rectangle())
