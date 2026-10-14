@@ -69,6 +69,7 @@ final class Store: ObservableObject {
     @Published var denied = false
     @Published var bar = ""
     @Published var update: String?
+    @Published var updateMsg = ""
     var targets: [Alert] = []
     var shown: Alert?
     @Published var barCals: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "barCals") ?? [UserDefaults.standard.string(forKey: "barCal") ?? ""].filter { !$0.isEmpty }) {
@@ -220,11 +221,13 @@ final class Store: ObservableObject {
     }
 
     func checkUpdate() async {
+        updateMsg = "Checking…"
+        let cur = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         guard let (d, _) = try? await URLSession.shared.data(from: URL(string: "https://api.github.com/repos/bartek-sarul/todaybar/releases/latest")!),
-              let tag = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["tag_name"] as? String,
-              isNewer(tag, than: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0")
-        else { return }
-        update = tag
+              let tag = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["tag_name"] as? String
+        else { updateMsg = "Couldn’t check for updates"; return }
+        update = isNewer(tag, than: cur) ? tag : nil
+        updateMsg = update == nil ? "You’re up to date (\(cur))" : "Update available: \(tag)"
     }
 
     func applyTheme() {
@@ -447,6 +450,14 @@ struct SettingsView: View {
             Form {
                 Toggle("Launch at login", isOn: $login)
                 Picker("Theme", selection: $theme) { Text("System").tag(0); Text("Light").tag(1); Text("Dark").tag(2) }
+                Section("Updates") {
+                    HStack {
+                        Button("Check for updates") { Task { await store.checkUpdate() } }
+                        if !store.updateMsg.isEmpty { Text(store.updateMsg).foregroundStyle(.secondary) }
+                        Spacer()
+                        if store.update != nil { Button("Download") { NSWorkspace.shared.open(URL(string: "https://github.com/bartek-sarul/todaybar/releases/latest/download/TodayBar.dmg")!) } }
+                    }
+                }
             }.formStyle(.grouped)
                 .onChange(of: login) { _, on in if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() } }
                 .tabItem { Label("General", systemImage: "gearshape") }
