@@ -120,8 +120,7 @@ final class Store: ObservableObject {
         if d.bool(forKey: "quietFocus") && focusOn { return true }
         if d.bool(forKey: "quietShare") && sharing { return true }
         if d.bool(forKey: "quietHours") {
-            let h = Calendar.current.component(.hour, from: .now), a = d.integer(forKey: "quietFrom"), b = d.integer(forKey: "quietTo")
-            return a <= b ? (a..<b).contains(h) : (h >= a || h < b)
+            return inQuietHours(hour: Calendar.current.component(.hour, from: .now), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
         }
         return false
     }
@@ -156,7 +155,7 @@ final class Store: ObservableObject {
         let now = Date.now
         let lead = UserDefaults.standard.double(forKey: "alertLead")
         if player != nil, now.timeIntervalSince(soundStart) >= UserDefaults.standard.double(forKey: "alarmMins") * 60 { stopSound() }
-        if snoozed.values.contains(where: { $0 <= now }) { snoozed = snoozed.filter { $0.value > now } }
+        if snoozed.values.contains(where: { $0 <= now }) { snoozed = activeSnoozes(snoozed, now: now) }
         let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") && !(UserDefaults.standard.bool(forKey: "skipInCall") && inCall) ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
         let due = cands.first {
             $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300)
@@ -248,11 +247,8 @@ final class Store: ObservableObject {
         if ev, d.bool(forKey: "bar"), !bc.isEmpty {
             let p = ek.predicateForEvents(withStart: .now, end: end, calendars: bc)
             let up = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
-            // prefer an event starting within 15 min over one already running
-            if let e = up.first(where: { $0.startDate > .now && $0.startDate <= .now.addingTimeInterval(900) }) ?? up.first {
-                let t = e.title ?? ""
-                bar = [d.bool(forKey: "barTime") ? fmt.string(from: e.startDate) : "", d.bool(forKey: "barName") ? (t.count > 24 ? t.prefix(24) + "…" : t) : ""]
-                    .filter { !$0.isEmpty }.joined(separator: " ")
+            if let e = pickBarEvent(up, start: { $0.startDate }, now: .now) {
+                bar = barTitle(time: fmt.string(from: e.startDate), name: e.title ?? "", showTime: d.bool(forKey: "barTime"), showName: d.bool(forKey: "barName"))
             }
         }
 

@@ -7,7 +7,7 @@ mkdir -p $A/MacOS
 V=${VERSION:-0.0.0-dev}
 # universal binary (arm64 + x86_64), macOS 14+
 for a in arm64 x86_64; do
-  swiftc -parse-as-library -O -target $a-apple-macos14.0 TodayBar.swift -o "${TMPDIR:-/tmp}/TodayBar-$a"
+  swiftc -parse-as-library -O -target $a-apple-macos14.0 TodayBar.swift Logic.swift -o "${TMPDIR:-/tmp}/TodayBar-$a"
 done
 lipo -create "${TMPDIR:-/tmp}"/TodayBar-arm64 "${TMPDIR:-/tmp}"/TodayBar-x86_64 -output $A/MacOS/TodayBar
 cat > $A/Info.plist <<P
