@@ -342,42 +342,61 @@ func permRow(_ name: String, _ pane: String) -> some View {
     }
 }
 
-struct CalendarsTab: View {
+/// Per-calendar visibility toggles shared by the Calendars and Reminders tabs.
+struct CalendarList: View {
     @ObservedObject var store: Store
     let kind: EKEntityMask
+    let title: String
+    var body: some View {
+        Section(title) {
+            ForEach(store.calendars.filter { $0.allowedEntityTypes.contains(kind) }, id: \.calendarIdentifier) { c in
+                Toggle(isOn: Binding(
+                    get: { !store.hidden.contains(c.calendarIdentifier) },
+                    set: { on in if on { store.hidden.remove(c.calendarIdentifier) } else { store.hidden.insert(c.calendarIdentifier) } }
+                )) {
+                    Label { Text("\(c.title) — \(c.source.title)") } icon: { Image(nsImage: dot(c.cgColor)) }
+                }
+            }
+        }
+    }
+}
+
+struct EventsTab: View {
+    @ObservedObject var store: Store
     @AppStorage("indicators") private var indicators = true
     @AppStorage("allDay") private var allDay = true
     @AppStorage("endTime") private var endTime = true
     @AppStorage("pastMode") private var pastMode = 0
-    @AppStorage("completed") private var completed = true
     @AppStorage("showEvents") private var showEvents = true
-    @AppStorage("showReminders") private var showReminders = true
     var body: some View {
         Form {
-            if kind == .event ? !store.evOK : !store.remOK { permRow(kind == .event ? "Calendar" : "Reminders", kind == .event ? "Calendars" : "Reminders") }
-            else {
-                Section { Toggle(kind == .event ? "Show calendar events in the list" : "Show reminders in the list", isOn: kind == .event ? $showEvents : $showReminders) }
-            }
-            if kind == .event ? store.evOK && showEvents : store.remOK && showReminders {
-                Section {
-                    if kind == .event {
+            if !store.evOK { permRow("Calendar", "Calendars") } else {
+                Section { Toggle("Show calendar events in the list", isOn: $showEvents) }
+                if showEvents {
+                    Section {
                         Toggle("Calendar indicators", isOn: $indicators)
                         Toggle("All-day events", isOn: $allDay)
                         Toggle("End time for events", isOn: $endTime)
                         Picker("Today’s past events", selection: $pastMode) { Text("Grayed out").tag(0); Text("Normal").tag(1); Text("Hidden").tag(2) }
-                    } else {
-                        Toggle("Completed reminders", isOn: $completed)
                     }
+                    CalendarList(store: store, kind: .event, title: "Calendars shown in the list")
                 }
-                Section(kind == .event ? "Calendars shown in the list" : "Reminder lists shown in the list") {
-                    ForEach(store.calendars.filter { $0.allowedEntityTypes.contains(kind) }, id: \.calendarIdentifier) { c in
-                        Toggle(isOn: Binding(
-                            get: { !store.hidden.contains(c.calendarIdentifier) },
-                            set: { on in if on { store.hidden.remove(c.calendarIdentifier) } else { store.hidden.insert(c.calendarIdentifier) } }
-                        )) {
-                            Label { Text("\(c.title) — \(c.source.title)") } icon: { Image(nsImage: dot(c.cgColor)) }
-                        }
-                    }
+            }
+        }.formStyle(.grouped).task { await store.load() }
+    }
+}
+
+struct RemindersTab: View {
+    @ObservedObject var store: Store
+    @AppStorage("completed") private var completed = true
+    @AppStorage("showReminders") private var showReminders = true
+    var body: some View {
+        Form {
+            if !store.remOK { permRow("Reminders", "Reminders") } else {
+                Section { Toggle("Show reminders in the list", isOn: $showReminders) }
+                if showReminders {
+                    Section { Toggle("Completed reminders", isOn: $completed) }
+                    CalendarList(store: store, kind: .reminder, title: "Reminder lists shown in the list")
                 }
             }
         }.formStyle(.grouped).task { await store.load() }
@@ -476,8 +495,8 @@ struct SettingsView: View {
                 }
                 }
             }.formStyle(.grouped).tabItem { Label("Alerts", systemImage: "alarm") }
-            CalendarsTab(store: store, kind: .event).tabItem { Label("Calendars", systemImage: "calendar") }
-            CalendarsTab(store: store, kind: .reminder).tabItem { Label("Reminders", systemImage: "checklist") }
+            EventsTab(store: store).tabItem { Label("Calendars", systemImage: "calendar") }
+            RemindersTab(store: store).tabItem { Label("Reminders", systemImage: "checklist") }
         }.frame(width: 460, height: 560)
     }
 }
