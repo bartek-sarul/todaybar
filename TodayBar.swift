@@ -37,7 +37,7 @@ final class AlertWindow: NSWindow { override var canBecomeKey: Bool { true } }
 struct AlertView: View {
     let a: Alert
     @ObservedObject var store: Store
-    let onJoin: () -> Void, onSnooze: () -> Void, onCancel: () -> Void
+    let onJoin: () -> Void, onSnooze: (TimeInterval) -> Void, onCancel: () -> Void
     var body: some View {
         VStack(spacing: 28) {
             TimelineView(.animation) { ctx in
@@ -50,10 +50,13 @@ struct AlertView: View {
             Text(a.start.formatted(date: .omitted, time: .shortened)).font(.title2).foregroundStyle(.white.opacity(0.7))
             HStack(spacing: 20) {
                 if a.join != nil { Button("Join", action: onJoin).buttonStyle(.borderedProminent).tint(.green) }
-                Button("Snooze 30s", action: onSnooze).buttonStyle(.bordered).tint(.white)
+                Button("Snooze 30s") { onSnooze(30) }.buttonStyle(.bordered).tint(.white)
+                Button("Snooze 1m") { onSnooze(60) }.buttonStyle(.bordered).tint(.white)
                 Button("Cancel", action: onCancel).buttonStyle(.bordered).tint(.white)
-                Button { store.toggleMute() } label: { Image(systemName: store.muted ? "speaker.slash.fill" : "speaker.wave.2.fill") }
-                    .buttonStyle(.bordered).tint(.white).help(store.muted ? "Unmute" : "Mute")
+                let off = !UserDefaults.standard.bool(forKey: "alarm")
+                let silent = off || store.muted
+                Button { store.toggleMute() } label: { Image(systemName: silent ? "speaker.slash.fill" : "speaker.wave.2.fill").frame(width: 30) }
+                    .buttonStyle(.bordered).tint(.white).disabled(off).help(off ? "Alarm sound is off in settings" : store.muted ? "Unmute" : "Mute")
             }.controlSize(.extraLarge)
         }.padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -80,6 +83,7 @@ final class Store: ObservableObject {
     var ticks = 0
     @Published var muted = false
     var player: AVAudioPlayer?
+    var soundStart = Date.now
     var savedVolume: Int?
 
     @discardableResult func script(_ src: String) -> NSAppleEventDescriptor? {
@@ -135,6 +139,7 @@ final class Store: ObservableObject {
         p.numberOfLoops = -1
         p.play()
         player = p
+        soundStart = .now
     }
 
     func stopSound() {
@@ -150,6 +155,8 @@ final class Store: ObservableObject {
         ticks += 1
         let now = Date.now
         let lead = UserDefaults.standard.double(forKey: "alertLead")
+        if player != nil, now.timeIntervalSince(soundStart) >= UserDefaults.standard.double(forKey: "alarmMins") * 60 { stopSound() }
+        if snoozed.values.contains(where: { $0 <= now }) { snoozed = snoozed.filter { $0.value > now } }
         let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") && !(UserDefaults.standard.bool(forKey: "skipInCall") && inCall) ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
         let due = cands.first {
             $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300)
@@ -170,7 +177,7 @@ final class Store: ObservableObject {
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             w.contentView = NSHostingView(rootView: AlertView(a: a, store: self,
                 onJoin: { [self] in if let j = a.join { NSWorkspace.shared.open(j) }; dismiss(a) },
-                onSnooze: { [self] in snoozed[a.id] = .now.addingTimeInterval(30); hideAlert() },
+                onSnooze: { [self] secs in snoozed[a.id] = .now.addingTimeInterval(secs); hideAlert() },
                 onCancel: { [self] in dismiss(a) }))
             w.setFrame(screen.frame, display: true)
             w.orderFrontRegardless()
@@ -193,12 +200,14 @@ final class Store: ObservableObject {
         if shown?.id == id { hideAlert() }
     }
     @Published var calendars: [EKCalendar] = []
+    @Published var evOK = true
+    @Published var remOK = true
     @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? []) {
         didSet { UserDefaults.standard.set(Array(hidden), forKey: "hidden") }
     }
 
     init() {
-        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "pastMode": 0, "completed": true, "alert": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "skipInCall": true, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
+        UserDefaults.standard.register(defaults: ["indicators": true, "allDay": true, "endTime": true, "pastMode": 0, "completed": true, "alert": true, "bar": true, "alarmMins": 5, "barTime": true, "barName": true, "showEvents": true, "showReminders": true, "alarm": true, "alarmVol": 30.0, "alertLead": 30.0, "quietFocus": true, "quietShare": true, "hideOnShare": false, "skipInCall": true, "linkOnly": true, "quietFrom": 22, "quietTo": 8])
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.applyTheme(); await self?.load() }
         }
@@ -223,6 +232,7 @@ final class Store: ObservableObject {
         let ev = (try? await ek.requestFullAccessToEvents()) ?? false
         let rem = (try? await ek.requestFullAccessToReminders()) ?? false
         denied = !ev && !rem
+        evOK = ev; remOK = rem
         calendars = (ev ? ek.calendars(for: .event) : []) + (rem ? ek.calendars(for: .reminder) : [])
         let cal = Calendar.current
         let start = cal.startOfDay(for: .now)
@@ -235,11 +245,14 @@ final class Store: ObservableObject {
         bar = ""
         targets = []
         let bc = ek.calendars(for: .event).filter { barCals.contains($0.calendarIdentifier) }
-        if ev, !bc.isEmpty {
+        if ev, d.bool(forKey: "bar"), !bc.isEmpty {
             let p = ek.predicateForEvents(withStart: .now, end: end, calendars: bc)
-            if let e = ek.events(matching: p).filter({ !$0.isAllDay && $0.endDate > .now }).min(by: { $0.startDate < $1.startDate }) {
+            let up = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
+            // prefer an event starting within 15 min over one already running
+            if let e = up.first(where: { $0.startDate > .now && $0.startDate <= .now.addingTimeInterval(900) }) ?? up.first {
                 let t = e.title ?? ""
-                bar = fmt.string(from: e.startDate) + " " + (t.count > 24 ? t.prefix(24) + "…" : t)
+                bar = [d.bool(forKey: "barTime") ? fmt.string(from: e.startDate) : "", d.bool(forKey: "barName") ? (t.count > 24 ? t.prefix(24) + "…" : t) : ""]
+                    .filter { !$0.isEmpty }.joined(separator: " ")
             }
         }
 
@@ -252,7 +265,7 @@ final class Store: ObservableObject {
             }
         }
 
-        if ev {
+        if ev, d.bool(forKey: "showEvents") {
             let cals = ek.calendars(for: .event).filter { !hidden.contains($0.calendarIdentifier) }
             if !cals.isEmpty {
                 let p = ek.predicateForEvents(withStart: start, end: end, calendars: cals)
@@ -267,7 +280,7 @@ final class Store: ObservableObject {
                 }
             }
         }
-        if rem {
+        if rem, d.bool(forKey: "showReminders") {
             let cals = ek.calendars(for: .reminder).filter { !hidden.contains($0.calendarIdentifier) }
             if !cals.isEmpty {
                 // incomplete reminders due today or overdue
@@ -309,7 +322,7 @@ struct Row: View {
             }
             Spacer(minLength: 0)
             if let id = i.aid, store.snoozed[id] != nil {
-                Button { store.dismissId(id) } label: { Image(systemName: "zzz").foregroundStyle(.orange) }.buttonStyle(.plain).help("Cancel snoozed alert")
+                Button("Zzz") { store.dismissId(id) }.buttonStyle(.bordered).tint(.orange).controlSize(.small).help("Cancel snoozed alert")
             }
             if let j = i.join { Button("Join") { NSWorkspace.shared.open(j); if let id = i.aid { store.dismissId(id) } }.buttonStyle(.borderedProminent).controlSize(.small) }
             if i.isReminder { Button { store.toggle(i) } label: { Image(systemName: i.done ? "checkmark.circle.fill" : "circle").foregroundStyle(i.color) }.buttonStyle(.plain) }
@@ -323,23 +336,50 @@ struct Row: View {
     }
 }
 
+func permRow(_ name: String, _ pane: String) -> some View {
+    HStack {
+        Label("\(name) access not granted", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        Spacer()
+        Button("Open Privacy Settings") {
+            if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(pane)") { NSWorkspace.shared.open(u) }
+        }
+    }
+}
+
 struct CalendarsTab: View {
     @ObservedObject var store: Store
+    let kind: EKEntityMask
+    @AppStorage("indicators") private var indicators = true
+    @AppStorage("allDay") private var allDay = true
+    @AppStorage("endTime") private var endTime = true
+    @AppStorage("pastMode") private var pastMode = 0
+    @AppStorage("completed") private var completed = true
+    @AppStorage("showEvents") private var showEvents = true
+    @AppStorage("showReminders") private var showReminders = true
     var body: some View {
-        let groups = Dictionary(grouping: store.calendars, by: { $0.source.title })
         Form {
-            ForEach(groups.keys.sorted(), id: \.self) { src in
-                Section(src) {
-                    ForEach(groups[src]!, id: \.calendarIdentifier) { c in
+            if kind == .event ? !store.evOK : !store.remOK { permRow(kind == .event ? "Calendar" : "Reminders", kind == .event ? "Calendars" : "Reminders") }
+            else {
+                Section { Toggle(kind == .event ? "Show calendar events in the list" : "Show reminders in the list", isOn: kind == .event ? $showEvents : $showReminders) }
+            }
+            if kind == .event ? store.evOK && showEvents : store.remOK && showReminders {
+                Section {
+                    if kind == .event {
+                        Toggle("Calendar indicators", isOn: $indicators)
+                        Toggle("All-day events", isOn: $allDay)
+                        Toggle("End time for events", isOn: $endTime)
+                        Picker("Today’s past events", selection: $pastMode) { Text("Grayed out").tag(0); Text("Normal").tag(1); Text("Hidden").tag(2) }
+                    } else {
+                        Toggle("Completed reminders", isOn: $completed)
+                    }
+                }
+                Section(kind == .event ? "Calendars shown in the list" : "Reminder lists shown in the list") {
+                    ForEach(store.calendars.filter { $0.allowedEntityTypes.contains(kind) }, id: \.calendarIdentifier) { c in
                         Toggle(isOn: Binding(
                             get: { !store.hidden.contains(c.calendarIdentifier) },
                             set: { on in if on { store.hidden.remove(c.calendarIdentifier) } else { store.hidden.insert(c.calendarIdentifier) } }
                         )) {
-                            HStack(spacing: 8) {
-                                Circle().fill(Color(cgColor: c.cgColor)).frame(width: 12, height: 12)
-                                Text(c.title)
-                                if c.allowedEntityTypes.contains(.reminder) { Text("reminders").font(.caption).foregroundStyle(.secondary) }
-                            }
+                            Label { Text("\(c.title) — \(c.source.title)") } icon: { Image(nsImage: dot(c.cgColor)) }
                         }
                     }
                 }
@@ -359,15 +399,14 @@ func dot(_ c: CGColor) -> NSImage {
 struct SettingsView: View {
     @ObservedObject var store: Store
     @AppStorage("login") private var login = false
+    @AppStorage("bar") private var bar = true
+    @AppStorage("barTime") private var barTime = true
+    @AppStorage("barName") private var barName = true
     @AppStorage("theme") private var theme = 0
-    @AppStorage("indicators") private var indicators = true
-    @AppStorage("allDay") private var allDay = true
-    @AppStorage("endTime") private var endTime = true
-    @AppStorage("pastMode") private var pastMode = 0
-    @AppStorage("completed") private var completed = true
     @AppStorage("alert") private var alert = true
     @AppStorage("alarm") private var alarm = true
     @AppStorage("alertLead") private var lead = 30.0
+    @AppStorage("alarmMins") private var alarmMins = 5
     @AppStorage("alarmVol") private var alarmVol = 30.0
     @AppStorage("quietFocus") private var quietFocus = true
     @AppStorage("quietShare") private var quietShare = true
@@ -379,20 +418,19 @@ struct SettingsView: View {
     @AppStorage("quietTo") private var quietTo = 8
     var body: some View {
         TabView {
-            Form { Toggle("Launch at login", isOn: $login) }.formStyle(.grouped)
+            Form {
+                Toggle("Launch at login", isOn: $login)
+                Picker("Theme", selection: $theme) { Text("System").tag(0); Text("Light").tag(1); Text("Dark").tag(2) }
+            }.formStyle(.grouped)
                 .onChange(of: login) { _, on in if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() } }
                 .tabItem { Label("General", systemImage: "gearshape") }
             Form {
-                Picker("Theme", selection: $theme) { Text("System").tag(0); Text("Light").tag(1); Text("Dark").tag(2) }
-                Section("Show") {
-                    Toggle("Calendar indicators", isOn: $indicators)
-                    Toggle("All-day events", isOn: $allDay)
-                    Toggle("End time for events", isOn: $endTime)
-                    Picker("Today’s past events", selection: $pastMode) { Text("Grayed out").tag(0); Text("Normal").tag(1); Text("Hidden").tag(2) }
-                    Toggle("Completed reminders", isOn: $completed)
+                if !store.evOK { permRow("Calendar", "Calendars") }
+                if store.evOK { Section { Toggle("Show next event in menu bar", isOn: $bar) }
+                if bar { Section {
+                    Toggle("Show time", isOn: $barTime)
+                    Toggle("Show event name", isOn: $barName)
                 }
-            }.formStyle(.grouped).tabItem { Label("Appearance", systemImage: "paintbrush") }
-            Form {
                 Section("Show next event from") {
                     ForEach(store.calendars.filter { $0.allowedEntityTypes.contains(.event) }, id: \.calendarIdentifier) { c in
                         Toggle(isOn: Binding(
@@ -402,23 +440,28 @@ struct SettingsView: View {
                             Label { Text("\(c.title) — \(c.source.title)") } icon: { Image(nsImage: dot(c.cgColor)) }
                         }
                     }
-                }
+                } } }
             }.formStyle(.grouped).tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             Form {
-                Section("Alert") {
-                    Toggle("Full-screen alert before a meeting", isOn: $alert)
+                if !store.evOK { permRow("Calendar", "Calendars") } else {
+                Section { Toggle("Full-screen alert before a meeting", isOn: $alert) }
+                if alert {
+                Section {
                     Toggle("Only for events with a meeting link", isOn: $linkOnly)
                     Toggle("Skip when already in a call (microphone in use)", isOn: $skipInCall)
                     Stepper("Trigger \(Int(lead)) seconds before", value: $lead, in: 0...3600, step: 5)
                     Toggle("Play alarm sound", isOn: $alarm)
-                    Slider(value: $alarmVol, in: 0...100, step: 5) { Text("Alarm volume \(Int(alarmVol))%") }
+                    if alarm {
+                        Stepper("Play for \(alarmMins) minute\(alarmMins == 1 ? "" : "s")", value: $alarmMins, in: 1...60)
+                        Slider(value: $alarmVol, in: 0...100, step: 5) { Text("Alarm volume \(Int(alarmVol))%") }
+                    }
                     Button("Test alert") { store.test() }
                 }
                 Section("Silence alarm sound when") {
                     Toggle("Focus / Do Not Disturb is on", isOn: $quietFocus)
                     Toggle("Screen is shared or mirrored", isOn: $quietShare)
+                    Toggle("Hide the full-screen alert while screen is shared", isOn: $hideOnShare)
                     Toggle("Quiet hours", isOn: $quietHours)
-                    Toggle("Also hide the full-screen alert while screen is shared", isOn: $hideOnShare)
                     if quietHours {
                         Picker("From", selection: $quietFrom) { ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
                         Picker("To", selection: $quietTo) { ForEach(0..<24, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
@@ -434,8 +477,11 @@ struct SettingsView: View {
                         }
                     }
                 }
+                }
+                }
             }.formStyle(.grouped).tabItem { Label("Alerts", systemImage: "alarm") }
-            CalendarsTab(store: store).tabItem { Label("Calendars", systemImage: "calendar") }
+            CalendarsTab(store: store, kind: .event).tabItem { Label("Calendars", systemImage: "calendar") }
+            CalendarsTab(store: store, kind: .reminder).tabItem { Label("Reminders", systemImage: "checklist") }
         }.frame(width: 460, height: 560)
     }
 }
@@ -462,7 +508,7 @@ struct Panel: View {
             }
             Divider()
             if store.denied {
-                Text("Allow Calendar/Reminders access in System Settings › Privacy & Security.").font(.callout)
+                Label("Check permission settings", systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout)
             } else if store.items.isEmpty {
                 Text("Nothing today").foregroundStyle(.secondary)
             } else {
