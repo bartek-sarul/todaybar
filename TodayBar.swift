@@ -68,6 +68,7 @@ final class Store: ObservableObject {
     @Published var items: [Item] = []
     @Published var denied = false
     @Published var bar = ""
+    @Published var update: String?
     var targets: [Alert] = []
     var shown: Alert?
     @Published var barCals: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "barCals") ?? [UserDefaults.standard.string(forKey: "barCal") ?? ""].filter { !$0.isEmpty }) {
@@ -214,6 +215,16 @@ final class Store: ObservableObject {
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in await self?.load() } }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.tick() } }
         Task { await load() }
+        Task { await checkUpdate() }
+        Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in Task { @MainActor in await self?.checkUpdate() } }
+    }
+
+    func checkUpdate() async {
+        guard let (d, _) = try? await URLSession.shared.data(from: URL(string: "https://api.github.com/repos/bartek-sarul/todaybar/releases/latest")!),
+              let tag = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["tag_name"] as? String,
+              isNewer(tag, than: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0")
+        else { return }
+        update = tag
     }
 
     func applyTheme() {
@@ -530,7 +541,16 @@ struct Panel: View {
                 VStack(alignment: .leading, spacing: 2) { ForEach(store.items) { i in Row(i: i, next: nextIDs.contains(i.id), store: store) } }
             }
             Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
+            if let v = store.update {
+                Button("Update available: \(v)") { NSWorkspace.shared.open(URL(string: "https://github.com/bartek-sarul/todaybar/releases/latest")!) }
+                    .buttonStyle(.plain).foregroundStyle(.blue)
+            }
+            HStack {
+                Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                Spacer()
+                Button { NSWorkspace.shared.open(URL(string: "https://bodziec.gumroad.com/l/todaybar")!) } label: { Label("Support", systemImage: "heart") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Pay what you want")
+            }
         }
         .padding(12).frame(width: 320)
         .task { await store.load() }

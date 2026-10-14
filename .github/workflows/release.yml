@@ -40,11 +40,13 @@ jobs:
         run: |
           VERSION=${{ steps.v.outputs.version }} ./build.sh
           ditto -c -k --keepParent TodayBar.app TodayBar-${{ steps.v.outputs.version }}.zip
+          mkdir dmg && cp -R TodayBar.app dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname TodayBar -srcfolder dmg -ov -format UDZO TodayBar.dmg
       - name: Publish
         if: steps.v.outputs.version
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           v=${{ steps.v.outputs.version }}
-          gh release create "v$v" "TodayBar-$v.zip" --target "${{ github.event.pull_request.merge_commit_sha }}" \
+          gh release create "v$v" "TodayBar-$v.zip" TodayBar.dmg --target "${{ github.event.pull_request.merge_commit_sha }}" \
             --title "TodayBar $v" --generate-notes
