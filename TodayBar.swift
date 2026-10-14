@@ -542,7 +542,7 @@ struct Panel: View {
             }
             Divider()
             if let v = store.update {
-                Button("Update available: \(v)") { NSWorkspace.shared.open(URL(string: "https://github.com/bartek-sarul/todaybar/releases/latest")!) }
+                Button("Update available: \(v)") { NSWorkspace.shared.open(URL(string: "https://github.com/bartek-sarul/todaybar/releases/latest/download/TodayBar.dmg")!) }
                     .buttonStyle(.plain).foregroundStyle(.blue)
             }
             HStack {
