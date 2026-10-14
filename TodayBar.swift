@@ -545,7 +545,12 @@ struct Panel: View {
                 Button("Update available: \(v)") { NSWorkspace.shared.open(URL(string: "https://github.com/bartek-sarul/todaybar/releases/latest")!) }
                     .buttonStyle(.plain).foregroundStyle(.blue)
             }
-            Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
+            HStack {
+                Button("Quit") { NSApplication.shared.terminate(nil) }.buttonStyle(.plain).foregroundStyle(.secondary)
+                Spacer()
+                Button { NSWorkspace.shared.open(URL(string: "https://bodziec.gumroad.com/l/todaybar")!) } label: { Label("Support", systemImage: "heart") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Pay what you want")
+            }
         }
         .padding(12).frame(width: 320)
         .task { await store.load() }

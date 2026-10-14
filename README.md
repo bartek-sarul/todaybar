@@ -17,6 +17,9 @@ macOS menu bar app showing today's calendar events and reminders, with a full-sc
 The app checks GitHub daily and shows "Update available" in the panel when a newer release exists.
 The app is ad-hoc signed (not notarized): on first launch right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/TodayBar.app`.
 
+## Support
+TodayBar is free. If you like it, [pay what you want](https://bodziec.gumroad.com/l/todaybar).
+
 ## Test
 ```sh
 swiftc Logic.swift tests/main.swift -o /tmp/check && /tmp/check
