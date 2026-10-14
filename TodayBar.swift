@@ -149,7 +149,7 @@ final class Store: ObservableObject {
 
     func toggleMute() { muted.toggle(); if muted { stopSound() } else { startSound() } }
 
-    func test() { testAlert = Alert(id: "test\(UUID())", title: "Test meeting", start: .now.addingTimeInterval(UserDefaults.standard.double(forKey: "alertLead")), join: URL(string: "https://zoom.us/j/123")) }
+    func test() { testAlert = Alert(id: "test\(UUID())", title: "Sprint planning", start: .now.addingTimeInterval(UserDefaults.standard.double(forKey: "alertLead")), join: URL(string: "https://zoom.us/j/123")) }
 
     func tick() {
         ticks += 1
@@ -199,7 +199,7 @@ final class Store: ObservableObject {
         if testAlert?.id == id { testAlert = nil }
         if shown?.id == id { hideAlert() }
     }
-    @Published var calendars: [EKCalendar] = []
+    @Published var calendars: [DemoCal] = []
     @Published var evOK = true
     @Published var remOK = true
     @Published var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hidden") ?? []) {
@@ -220,6 +220,7 @@ final class Store: ObservableObject {
     }
 
     func checkUpdate() async {
+        return // demo
         guard let (d, _) = try? await URLSession.shared.data(from: URL(string: "https://api.github.com/repos/bartek-sarul/todaybar/releases/latest")!),
               let tag = (try? JSONSerialization.jsonObject(with: d) as? [String: Any])?["tag_name"] as? String,
               isNewer(tag, than: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0")
@@ -238,78 +239,52 @@ final class Store: ObservableObject {
         Task { await load() }
     }
 
+    // DEMO BRANCH: hardcoded data for screenshots, never merge.
     func load() async {
-        let ev = (try? await ek.requestFullAccessToEvents()) ?? false
-        let rem = (try? await ek.requestFullAccessToReminders()) ?? false
-        denied = !ev && !rem
-        evOK = ev; remOK = rem
-        calendars = (ev ? ek.calendars(for: .event) : []) + (rem ? ek.calendars(for: .reminder) : [])
+        denied = false; evOK = true; remOK = true
         let cal = Calendar.current
         let start = cal.startOfDay(for: .now)
-        let end = cal.date(byAdding: .day, value: 1, to: start)!
-        let d = UserDefaults.standard
+        let n = Date(timeIntervalSinceReferenceDate: (Date.now.timeIntervalSinceReferenceDate / 300).rounded(.down) * 300)
+        func at(_ min: Double) -> Date { n.addingTimeInterval(min * 60) }
         let tf = DateFormatter(); tf.dateStyle = .none; tf.timeStyle = .short
-        let fmt = tf
-        var out: [Item] = []
-
-        bar = ""
-        targets = []
-        let bc = ek.calendars(for: .event).filter { barCals.contains($0.calendarIdentifier) }
-        if ev, d.bool(forKey: "bar"), !bc.isEmpty {
-            let p = ek.predicateForEvents(withStart: .now, end: end, calendars: bc)
-            let up = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
-            if let e = pickBarEvent(up, start: { $0.startDate }, now: .now) {
-                bar = barTitle(time: fmt.string(from: e.startDate), name: e.title ?? "", showTime: d.bool(forKey: "barTime"), showName: d.bool(forKey: "barName"))
-            }
+        let blue = Color(red: 0.25, green: 0.55, blue: 1), green = Color(red: 0.2, green: 0.78, blue: 0.35)
+        let orange = Color(red: 1, green: 0.6, blue: 0.1), purple = Color(red: 0.65, green: 0.35, blue: 0.9)
+        func ev(_ id: String, _ t: String, _ from: Double, _ to: Double, _ c: Color, join: String? = nil) -> Item {
+            Item(id: id, title: t, time: "\(tf.string(from: at(from))) – \(tf.string(from: at(to)))", color: c, sort: at(from), isReminder: false,
+                 open: nil, join: join.flatMap { URL(string: $0) }, past: at(to) < .now, aid: id)
         }
-
-        if ev {
-            let ac = ek.calendars(for: .event).filter { alertCals.contains($0.calendarIdentifier) }
-            if !ac.isEmpty {
-                let p = ek.predicateForEvents(withStart: .now, end: end, calendars: ac)
-                targets = ek.events(matching: p).filter { !$0.isAllDay && $0.endDate > .now }.sorted { $0.startDate < $1.startDate }
-                    .map { Alert(id: aid($0), title: $0.title ?? "", start: $0.startDate, join: meetingLink($0)) }
-            }
-        }
-
-        if ev, d.bool(forKey: "showEvents") {
-            let cals = ek.calendars(for: .event).filter { !hidden.contains($0.calendarIdentifier) }
-            if !cals.isEmpty {
-                let p = ek.predicateForEvents(withStart: start, end: end, calendars: cals)
-                for e in ek.events(matching: p) {
-                    if e.isAllDay && !d.bool(forKey: "allDay") { continue }
-                    if !e.isAllDay && e.endDate < .now && d.integer(forKey: "pastMode") == 2 { continue }
-                    let t = e.isAllDay ? "All day" : d.bool(forKey: "endTime") ? "\(fmt.string(from: e.startDate)) – \(fmt.string(from: e.endDate))" : fmt.string(from: e.startDate)
-                    let eid = e.eventIdentifier ?? UUID().uuidString
-                    out.append(Item(id: "e\(eid)\(e.startDate.timeIntervalSince1970)", title: e.title ?? "", time: t,
-                                    color: Color(cgColor: e.calendar.cgColor), sort: e.isAllDay ? start : e.startDate, isReminder: false,
-                                    open: URL(string: "ical://ekevent/\(eid)?method=show&options=more"), join: meetingLink(e), past: !e.isAllDay && e.endDate < .now, aid: aid(e)))
-                }
-            }
-        }
-        if rem, d.bool(forKey: "showReminders") {
-            let cals = ek.calendars(for: .reminder).filter { !hidden.contains($0.calendarIdentifier) }
-            if !cals.isEmpty {
-                // incomplete reminders due today or overdue
-                let p = ek.predicateForIncompleteReminders(withDueDateStarting: nil, ending: end, calendars: cals)
-                var rs: [EKReminder] = await withCheckedContinuation { c in ek.fetchReminders(matching: p) { c.resume(returning: $0 ?? []) } }
-                if d.bool(forKey: "completed") {
-                    let pc = ek.predicateForCompletedReminders(withCompletionDateStarting: start, ending: end, calendars: cals)
-                    rs += await withCheckedContinuation { c in ek.fetchReminders(matching: pc) { c.resume(returning: $0 ?? []) } }
-                }
-                for r in rs {
-                    let comps = r.dueDateComponents
-                    guard let due = comps.flatMap({ cal.date(from: $0) }) ?? r.completionDate else { continue }
-                    out.append(Item(id: "r" + r.calendarItemIdentifier, title: r.title ?? "", time: comps?.hour != nil || comps == nil ? fmt.string(from: due) : "Reminder",
-                                    color: Color(cgColor: r.calendar.cgColor), sort: max(due, start), isReminder: true,
-                                    open: URL(string: "x-apple-reminderkit://REMCDReminder/\(r.calendarItemIdentifier)"), join: nil,
-                                    done: r.isCompleted, rid: r.calendarItemIdentifier))
-                }
-            }
-        }
+        calendars = [
+            DemoCal(calendarIdentifier: "work", title: "Work", source: DemoSource(title: "Company"), cgColor: NSColor(blue).cgColor, allowedEntityTypes: .event),
+            DemoCal(calendarIdentifier: "home", title: "Home", source: DemoSource(title: "iCloud"), cgColor: NSColor(green).cgColor, allowedEntityTypes: .event),
+            DemoCal(calendarIdentifier: "family", title: "Family", source: DemoSource(title: "iCloud"), cgColor: NSColor(orange).cgColor, allowedEntityTypes: .event),
+            DemoCal(calendarIdentifier: "tasks", title: "Tasks", source: DemoSource(title: "iCloud"), cgColor: NSColor(purple).cgColor, allowedEntityTypes: .reminder),
+            DemoCal(calendarIdentifier: "groceries", title: "Groceries", source: DemoSource(title: "iCloud"), cgColor: NSColor(orange).cgColor, allowedEntityTypes: .reminder),
+        ]
+        if barCals.isEmpty { barCals = ["work"] }
+        if alertCals.isEmpty { alertCals = ["work"] }
+        var out: [Item] = [
+            Item(id: "allday", title: "Maya’s birthday", time: "All day", color: orange, sort: start, isReminder: false, open: nil, join: nil),
+            ev("e1", "Daily standup", -190, -175, blue, join: "https://meet.google.com/abc-defg-hij"),
+            ev("e2", "Design review", -95, -35, blue, join: "https://zoom.us/j/123"),
+            ev("e3", "Sprint planning", 20, 80, blue, join: "https://zoom.us/j/456"),
+            ev("e4", "Lunch with Sam", 120, 180, green),
+            ev("e5", "1:1 with Alex", 240, 270, blue, join: "https://teams.microsoft.com/l/meetup-join/789"),
+            ev("e6", "Pick up kids", 420, 450, orange),
+        ]
+        out += [
+            Item(id: "r1", title: "Send invoice to Acme", time: tf.string(from: at(-60)), color: purple, sort: at(-60), isReminder: true, open: nil, join: nil, rid: "r1"),
+            Item(id: "r2", title: "Buy milk and eggs", time: tf.string(from: at(300)), color: orange, sort: at(300), isReminder: true, open: nil, join: nil, rid: "r2"),
+            Item(id: "r3", title: "Book dentist", time: tf.string(from: at(-240)), color: purple, sort: at(-240), isReminder: true, open: nil, join: nil, done: true, rid: "r3"),
+        ]
         items = out.sorted { $0.sort < $1.sort }
+        let d = UserDefaults.standard
+        bar = barTitle(time: tf.string(from: at(20)), name: "Sprint planning", showTime: d.bool(forKey: "barTime"), showName: d.bool(forKey: "barName"))
+        targets = []
     }
 }
+
+struct DemoSource { let title: String }
+struct DemoCal { let calendarIdentifier: String; let title: String; let source: DemoSource; let cgColor: CGColor; let allowedEntityTypes: EKEntityMask }
 
 final class Flag: ObservableObject { @Published var on = false } // @State macro plugin missing under bare swiftc
 
