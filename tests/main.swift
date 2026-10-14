@@ -33,4 +33,12 @@ check(barTitle(time: "", name: String(repeating: "x", count: 30), showTime: fals
 let s = activeSnoozes(["a": at(-1), "b": at(1)], now: now)
 check(s.keys.sorted() == ["b"], "expired snooze dropped")
 
+// update check
+check(isNewer("v1.2.3", than: "1.2.2"), "patch newer")
+check(isNewer("v1.10.0", than: "1.9.9"), "numeric not lexical")
+check(!isNewer("v1.2.3", than: "1.2.3"), "equal")
+check(!isNewer("v1.2.3", than: "1.3.0"), "older")
+check(isNewer("v0.0.1", than: "0.0.0-dev"), "dev build suffix ignored")
+check(isNewer("v1.2", than: "1.1.9"), "short")
+
 print("ok")

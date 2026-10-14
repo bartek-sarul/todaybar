@@ -19,3 +19,14 @@ func barTitle(time: String, name: String, showTime: Bool, showName: Bool, maxNam
 }
 
 func activeSnoozes(_ s: [String: Date], now: Date) -> [String: Date] { s.filter { $0.value > now } }
+
+/// True when `remote` ("v1.2.3" or "1.2.3") is a higher version than `local`; non-numeric parts count as 0.
+func isNewer(_ remote: String, than local: String) -> Bool {
+    func parts(_ v: String) -> [Int] { v.drop { $0 == "v" }.split(separator: ".").map { Int($0.prefix { $0.isNumber }) ?? 0 } }
+    let (r, l) = (parts(remote), parts(local))
+    for i in 0..<max(r.count, l.count) {
+        let (a, b) = (i < r.count ? r[i] : 0, i < l.count ? l[i] : 0)
+        if a != b { return a > b }
+    }
+    return false
+}

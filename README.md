@@ -13,7 +13,8 @@ macOS menu bar app showing today's calendar events and reminders, with a full-sc
 - Per-calendar visibility, light/dark theme, launch at login
 
 ## Install
-Download `TodayBar-x.y.z.zip` from [Releases](https://github.com/bartek-sarul/todaybar/releases), unzip, move `TodayBar.app` to `/Applications`.
+[Download the latest `TodayBar.dmg`](https://github.com/bartek-sarul/todaybar/releases/latest/download/TodayBar.dmg) (all versions: [Releases](https://github.com/bartek-sarul/todaybar/releases)), open it, drag `TodayBar.app` to `/Applications`.
+The app checks GitHub daily and shows "Update available" in the panel when a newer release exists.
 The app is ad-hoc signed (not notarized): on first launch right-click → Open, or run `xattr -dr com.apple.quarantine /Applications/TodayBar.app`.
 
 ## Test
@@ -38,7 +39,7 @@ Grant Calendar and Reminders access on first launch.
 ## Contributing
 Work on a `feature/*` or `fix/*` branch and open a PR to `main`. CI must pass.
 Every merged PR cuts a release (patch bump by default). Add `release:minor` or `release:major` before merging to bump more, or `release:skip` for no release (docs, CI, chores).
-The version is the previous tag bumped accordingly; a zip is attached to the GitHub release.
+The version is the previous tag bumped accordingly; a zip and `TodayBar.dmg` are attached to the GitHub release.
 
 ## License
 Proprietary, all rights reserved. See [LICENSE](LICENSE).
