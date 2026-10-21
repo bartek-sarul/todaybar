@@ -79,6 +79,9 @@ final class Store: ObservableObject {
         didSet { UserDefaults.standard.set(Array(alertCals), forKey: "alertCals") }
     }
     var testAlert: Alert?
+    var flashed: Set<String> = []
+    var flashUntil = Date.distantPast
+    @Published var flashOn = false
     var dismissed: Set<String> = []
     @Published var snoozed: [String: Date] = [:]
     var windows: [NSWindow] = []
@@ -158,11 +161,18 @@ final class Store: ObservableObject {
         let lead = UserDefaults.standard.double(forKey: "alertLead")
         if player != nil, now.timeIntervalSince(soundStart) >= UserDefaults.standard.double(forKey: "alarmMins") * 60 { stopSound() }
         if snoozed.values.contains(where: { $0 <= now }) { snoozed = activeSnoozes(snoozed, now: now) }
-        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") && !(UserDefaults.standard.bool(forKey: "skipInCall") && inCall) ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
+        let cands = (testAlert.map { [$0] } ?? []) + (UserDefaults.standard.bool(forKey: "alert") ? targets.filter { $0.join != nil || !UserDefaults.standard.bool(forKey: "linkOnly") } : [])
+        let skip = UserDefaults.standard.bool(forKey: "skipInCall") && inCall
         let due = cands.first {
             $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300)
                 && !dismissed.contains($0.id) && (snoozed[$0.id] ?? .distantPast) <= now
+                && !skip
         }
+        // in a call: no popup, flash the menu bar item for 5s instead
+        if skip, let m = cands.first(where: { $0.start.timeIntervalSince(now) <= lead && now < $0.start.addingTimeInterval(300) && !dismissed.contains($0.id) && (snoozed[$0.id] ?? .distantPast) <= now }),
+           flashed.insert(m.id).inserted { flashUntil = now.addingTimeInterval(5) }
+        let f = now < flashUntil && ticks % 2 == 0
+        if f != flashOn { flashOn = f }
         guard let a = due, !(UserDefaults.standard.bool(forKey: "hideOnShare") && sharing) else { hideAlert(); return }
         if shown?.id != a.id { hideAlert(); showAlert(a) }
     }
@@ -485,6 +495,10 @@ struct SettingsView: View {
                 Section { Toggle("Full-screen alert before a meeting", isOn: $alert) }
                 if alert {
                 Section {
+                    Text("A full-screen alert with alarm sound appears shortly before a meeting starts. Join opens the meeting link; Snooze brings it back; Cancel dismisses it. While you're in a call (microphone in use) no alert is shown; the menu bar icon flashes a bell for 5 seconds instead.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Section {
                     Toggle("Only for events with a meeting link", isOn: $linkOnly)
                     Toggle("Skip when already in a call (microphone in use)", isOn: $skipInCall)
                     Stepper("Trigger \(Int(lead)) seconds before", value: $lead, in: 0...3600, step: 5)
@@ -577,11 +591,24 @@ let barIcon: NSImage = {
     return i
 }()
 
+// same canvas size as barIcon so the swap doesn't shift the title
+let bellIcon: NSImage = {
+    let b = NSImage(systemSymbolName: "bell.fill", accessibilityDescription: "Meeting")!
+        .withSymbolConfiguration(.init(pointSize: 24, weight: .regular))!
+    let i = NSImage(size: barIcon.size, flipped: false) { r in
+        let h = r.height, w = b.size.width * h / b.size.height
+        b.draw(in: NSRect(x: (r.width - w) / 2, y: 0, width: w, height: h))
+        return true
+    }
+    i.isTemplate = true
+    return i
+}()
+
 @main
 struct TodayBar: App {
     @StateObject var store = Store()
     var body: some Scene {
-        MenuBarExtra { Panel(store: store) } label: { HStack(spacing: 4) { Image(nsImage: barIcon); if !store.bar.isEmpty { Text(store.bar) } } }
+        MenuBarExtra { Panel(store: store) } label: { HStack(spacing: 4) { if store.flashOn { Image(nsImage: bellIcon) } else { Image(nsImage: barIcon) }; if !store.bar.isEmpty { Text(store.bar) } } }
             .menuBarExtraStyle(.window)
         Settings { SettingsView(store: store) }
     }
